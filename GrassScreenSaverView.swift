@@ -1,101 +1,113 @@
 import ScreenSaver
-import AppKit
-import MetalKit
-
-var device: MTLDevice!
-var commandQueue: MTLCommandQueue!
-var metalPipelineState: MTLRenderPipelineState!
-var vertexBuffer: MTLBuffer?
-
-
-struct Blade {
-    var base: CGPoint
-    var tip: CGPoint
-}
-
-struct Wind {
-    var direction: CGPoint
-    var magnitude: CGFloat
-}
+import Cocoa
 
 class GrassScreenSaverView: ScreenSaverView {
     
-    var grassBlades: [Blade] = []
-    
-    var wind = Wind(direction: CGPoint(x: 1, y: 0), magnitude: 2.0)
-    
-    let bladeWidth: CGFloat = 1.0
-    let bladeHeight: CGFloat = 6.0
-    let bladeSpacing: CGFloat = 5.0
-    
+    var circle: CircleView!
+    var circle2: CircleView!
+    var circleVelocity: CGPoint = CGPoint(x: 2.0, y: 2.0)
+    var circle2Velocity: CGPoint = CGPoint(x: 2.0, y: 2.0)
+    var logoImageView: NSImageView!
+    var colorArray: [NSColor] = [
+        NSColor(calibratedRed: 234.0/255.0, green: 61.0/255.0, blue: 37.0/255.0, alpha: 1.0), // Red
+        NSColor(calibratedRed: 234.0/255.0, green: 254.0/255.0, blue: 83.0/255.0, alpha: 1.0), // Yellow
+        NSColor(calibratedRed: 106.0/255.0, green: 230.0/255.0, blue: 69.0/255.0, alpha: 1.0), // Green
+        NSColor(calibratedRed: 98.0/255.0, green: 16.0/255.0, blue: 245.0/255.0, alpha: 1.0),  // Purple
+        NSColor(calibratedRed: 11.0/255.0, green: 36.0/255.0, blue: 245.0/255.0, alpha: 1.0)   // Blue
+    ]
+
     override init?(frame: NSRect, isPreview: Bool) {
         super.init(frame: frame, isPreview: isPreview)
-        animationTimeInterval = 1.0 / 30.0
-        
-        setupBlades()
-        
-        print("GrassScreenSaverView initialized with frame: \(frame)")
-        print("Total blades: \(grassBlades.count)")
-    }
-    
-    func setupBlades() {
-        guard grassBlades.isEmpty else { return }
-
-        let columns = Int(self.bounds.width / (bladeWidth + bladeSpacing))
-        let rows = Int(self.bounds.height / (bladeHeight + bladeSpacing))
-        
-        for _ in 0..<(rows * columns) {
-            // Increased random offsets
-            let offsetX = CGFloat.random(in: -3...3)
-            let offsetY = CGFloat.random(in: -6...6)
-            
-            let baseX = CGFloat.random(in: 0..<self.bounds.width)
-            let baseY = CGFloat.random(in: 0..<self.bounds.height)
-            let base = CGPoint(x: baseX + offsetX, y: baseY + offsetY)
-            let tip = CGPoint(x: baseX + offsetX, y: baseY + offsetY + bladeHeight)
-            grassBlades.append(Blade(base: base, tip: tip))
-        }
-    }
-
-
-    
-    override func draw(_ rect: NSRect) {
-        // Set the background color to dark green
-        NSColor(red: 0.0, green: 0.2, blue: 0.0, alpha: 1.0).setFill()
-        NSBezierPath(rect: rect).fill()
-        
-        NSColor.green.set()
-        for blade in grassBlades {
-            let path = NSBezierPath()
-            path.move(to: blade.base)
-            let adjustedTip = CGPoint(x: blade.tip.x + wind.direction.x * wind.magnitude,
-                                      y: blade.tip.y + wind.direction.y * wind.magnitude)
-            path.line(to: adjustedTip)
-            path.lineWidth = bladeWidth
-            path.stroke()
-        }
-    }
-
-
-    override func animateOneFrame() {
-        adjustWind()
-        setNeedsDisplay(bounds)
-    }
-    
-    func adjustWind() {
-        // Randomly adjust the wind's direction and magnitude for variation
-        let randomAngle = CGFloat.random(in: -0.05...0.05)
-        let randomMagnitude = CGFloat.random(in: -0.5...0.5)
-        
-        let dx = cos(randomAngle) * wind.direction.x - sin(randomAngle) * wind.direction.y
-        let dy = sin(randomAngle) * wind.direction.x + cos(randomAngle) * wind.direction.y
-        
-        wind.direction = CGPoint(x: dx, y: dy)
-        wind.magnitude += randomMagnitude
+        self.animationTimeInterval = 1.0 / 30.0
+        setupCircles()
+        setupLogo()
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    
+    func setupCircles() {
+        circle = CircleView(frame: CGRect(x: 0, y: 0, width: 100, height: 100), color: colorArray.randomElement() ?? .red)
+        circle2 = CircleView(frame: CGRect(x: 50, y: 50, width: 100, height: 100), color: colorArray.randomElement() ?? .green)
+        self.addSubview(circle)
+        self.addSubview(circle2)
+    }
+    
+    func setupLogo() {
+        let bundle = Bundle(for: type(of: self))
+        guard let logoImage = bundle.image(forResource: "logo.png") else {
+            print("Failed to load logo.png from screensaver bundle")
+            return
+        }
+        
+        let aspectRatio = logoImage.size.height / logoImage.size.width
+        let logoWidth: CGFloat = 500 // Desired width for the logo
+        let logoHeight: CGFloat = logoWidth * aspectRatio
+        
+        logoImageView = NSImageView(frame: CGRect(x: (bounds.width - logoWidth) / 2,
+                                                  y: (bounds.height - logoHeight) / 2,
+                                                  width: logoWidth,
+                                                  height: logoHeight))
+        logoImageView.image = logoImage
+        logoImageView.imageScaling = .scaleProportionallyUpOrDown
+        logoImageView.wantsLayer = true // This enables layer-backing for the view
+        logoImageView.layer?.zPosition = 1
+        addSubview(logoImageView)
+    }
 
+    
+    override func animateOneFrame() {
+        super.animateOneFrame()
+        updateCirclePositionAndColor(circle: &circle, velocity: &circleVelocity, currentColor: circle.fillColor)
+        updateCirclePositionAndColor(circle: &circle2, velocity: &circle2Velocity, currentColor: circle2.fillColor)
+    }
+
+    func updateCirclePositionAndColor(circle: inout CircleView, velocity: inout CGPoint, currentColor: NSColor) {
+        var newFrame = circle.frame
+        newFrame.origin.x += velocity.x
+        newFrame.origin.y += velocity.y
+
+        if newFrame.maxX > bounds.maxX || newFrame.minX < bounds.minX || newFrame.maxY > bounds.maxY || newFrame.minY < bounds.minY {
+            velocity.x *= (newFrame.maxX > bounds.maxX || newFrame.minX < bounds.minX) ? -1 : velocity.x
+            velocity.y *= (newFrame.maxY > bounds.maxY || newFrame.minY < bounds.minY) ? -1 : velocity.y
+            circle.fillColor = nextRandomColor(currentColor: currentColor)
+        }
+
+        circle.frame = newFrame
+        self.needsDisplay = true
+    }
+    
+    func nextRandomColor(currentColor: NSColor) -> NSColor {
+        var availableColors = colorArray.filter { $0 != currentColor }
+        if availableColors.isEmpty {
+            return currentColor
+        }
+        return availableColors.randomElement() ?? currentColor
+    }
+}
+
+// Custom view to draw a circle
+class CircleView: NSView {
+    var fillColor: NSColor = .red {
+        didSet {
+            self.needsDisplay = true
+        }
+    }
+    
+    init(frame: CGRect, color: NSColor) {
+        self.fillColor = color
+        super.init(frame: frame)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        fillColor.setFill()
+        let path = NSBezierPath(ovalIn: bounds)
+        path.fill()
     }
 }
